@@ -1,0 +1,429 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <title>map</title>
+    <style type="text/css">
+        body, html, #map_demo, #tab, #mapfrm {  width: 100%;  height: 100%;  overflow: hidden; margin: 0;  }
+        .BMap_cpyCtrl{  display: none;  }
+        .anchorBL{  display: none;  }
+    </style>
+    <link rel="stylesheet" type="text/css" href="./styles/css/baidu_map_v2.css" />
+    <script type="text/javascript" src="./styles/jquery.js"></script>
+    <script type="text/javascript" src="./styles/layer/layer.js"></script>
+    <script type="text/javascript" src="./styles/baidumap_offline_v2_load.js"></script>
+    <script type="text/javascript" src="./styles/tools/MarkerClusterer_min.js"></script>
+    <script type="text/javascript" src="./styles/tools/TextIconOverlay_min.js"></script>
+    <script type="text/javascript" src="./styles/tools/AreaRestriction_min.js"></script>
+    <script type="text/javascript" src="./styles/qwebchannel.js"></script>
+</head>
+<body>
+    <div id="map_demo">
+    </div>
+</body>
+<script type="text/javascript">
+    window.onload = function () {
+        new QWebChannel(qt.webChannelTransport, function (channel) {
+            var g_obj = null;   // 与 c++ 交互的对象
+            var g_map = null;   // 地图对象
+            var g_pathes = [];   // 曲线的数组，存储所有路线对象
+            var g_markers = [];  // 标注的数组，存储所有marker对象
+            var g_markerClusterer = null;             //点聚功能的对象
+            var g_infoWindow = new BMap.InfoWindow();  // 创建信息窗口对象
+            var g_isMoving = false;
+            var g_isZooming = false;
+            var g_centers = [];
+
+            // 定义地图参数
+            var g_outputPath = './styles/tiles/';     // 瓦片路径
+            var g_minLevel = 3;                       // 最小显示层级
+            var g_maxLevel = 19;                      // 最大显示层级
+            var g_format = '.png';                    // 瓦片格式
+            var g_tileLayer = new BMap.TileLayer();   // 选择瓦片图的规则
+            var g_centerPoint = new BMap.Point(116.404, 39.915); //北京的经纬度
+            g_tileLayer.getTilesUrl = function (tileCoord, zoom) {
+                var x = tileCoord.x;
+                var y = tileCoord.y;
+                var url = g_outputPath + zoom + '/' + x + '/' + y + g_format;
+                return url;
+            }
+
+            // icon 参数
+            var g_iconPath = "./styles/soldiersicon/dest/"      //士兵的icon图标目录
+            var g_type = ".png";                                
+            var g_iconOpt = { anchor: new BMap.Size(24, 25), imageOffset: new BMap.Size(0, 0), infoWindowAnchor: new BMap.Size(13, 0) }; // icon图标位置参数
+            var g_iconSize = new BMap.Size(39, 25);             //图标的长宽度
+
+            g_obj = channel.objects.webObject;                                               // 获取与c++交互的对象
+
+            var map_type = new BMap.MapType('MyMap', g_tileLayer, { minZoom: g_minLevel, maxZoom: g_maxLevel });
+            g_map = new BMap.Map("map_demo", { mapType: map_type });                        // 创建Map实例,设置最小和最大地图级别
+            g_map.enableScrollWheelZoom(true);                                                // 开启鼠标滚轮缩放
+            g_map.addControl(new BMap.ScaleControl({ anchor: BMAP_ANCHOR_TOP_LEFT }));       // 左上角，添加比例尺
+            g_map.addControl(new BMap.NavigationControl());                                   // 缩放按钮
+            g_map.centerAndZoom(g_centerPoint, 8);                                            // 初始化地图,设置中心点坐标和地图级别
+
+            // 点聚合：生成一个marker数组，然后调用markerClusterer类即可。
+            g_markerClusterer = new BMapLib.MarkerClusterer(g_map, { markers: g_markers });
+
+            //地图添加事件
+            g_map.addEventListener("movestart",function (e) {        //移动开始事件
+                g_isMoveing = true;
+            });
+            g_map.addEventListener("moveend",function (e) {        //移动结束事件
+                g_isMoveing = false;
+                getVisibleIds();
+            });
+            g_map.addEventListener("zoomstart",function (e) {         //缩放开始事件
+                g_isZooming = true;
+            });
+            g_map.addEventListener("zoomend",function (e) {         //缩放结束事件
+                g_isZooming = false;
+                getVisibleIds();
+            });
+
+            // 关联c++端更新位置信号
+            g_obj.updatePositionSignal.connect(function (text) {
+                if(text.type == 1){
+                    for (var i = g_markers.length-1 ; i >= 0; i--) {
+                        var index = -1;
+                        var soldier = g_markers[i];
+                        for(var j = 0; j < text.soldiers.length ; j++){
+                            if(soldier.f_soldierid == text.soldiers[j].f_soldierid) index = j;
+                        }
+                        if(index == -1){
+                            g_markerClusterer.removeMarker(g_markers[i]);       // 删除了标注，更新到点聚合功能
+                            g_markers.splice(i,1);
+                        }
+                    }
+                }
+
+                for (var i = 0; i < text.soldiers.length; i++) {
+                    var index = -1;
+                    var soldier = text.soldiers[i];
+                    if(!soldier)continue;
+                    if (!soldier.f_soldierid) continue;
+                    if (!soldier.f_curlongitude) continue;
+                    if (!soldier.f_curlatitude) continue;
+
+                    for (var j = 0; j < g_markers.length; j++) {
+                        //查询id对应的 标注 是否存在 
+                        if (soldier.f_soldierid == g_markers[j].f_soldierid) index = j;
+                    }
+
+                    var pt = new BMap.Point(soldier.f_curlongitude, soldier.f_curlatitude);
+                    if (index == -1) {
+                        //  如果id对应的标注不存在,则创建一个新的标注对象
+                        var marker = new BMap.Marker(pt);                // 创建标注
+                        if (soldier.icon) {
+                            var icon = new BMap.Icon(g_iconPath + soldier.icon + g_type, g_iconSize, g_iconOpt);
+                            marker.setIcon(icon);  //设置图标
+                            marker.icon = soldier.icon;
+                        }
+                        marker.f_soldierid = soldier.f_soldierid;
+                        marker.f_soldiertype = soldier.f_soldiertype;
+                        marker.f_soldiername = soldier.f_soldiername;
+                        marker.isSel = 0;           //是否选中
+                        /*marker.f_curlongitude = soldier.f_curlongitude;
+                        marker.f_curlatitude = soldier.f_curlatitude;
+                        marker.f_unitinfo = soldier.f_unitinfo;*/
+                        marker.addEventListener('click', function (e) {   // 监听点击事件
+                            g_obj.recvSoldierIdSlot(this.f_soldierid);       // 把士兵id发送给c++端
+                            updateIcon(this);
+                            var content = creatInfoWindowContent(this);
+                            g_infoWindow.setContent(content);
+                            g_infoWindow.father = this;
+                            this.openInfoWindow(g_infoWindow);            // 显示 infowindow
+                        });
+                        g_markers.push(marker);                            // 添加到标注数组中
+                    } else {
+                        // 如果id对应的标注存在，则只更新此标注在地图中的位置
+                        var pt_old = g_markers[index].getPosition();
+                        if (pt_old.lng != pt.lng || pt_old.lat != pt.lat) {
+                            g_markers[index].setPosition(pt);
+                            if (g_infoWindow.isOpen() && g_infoWindow.father == g_markers[index]) {
+                                var content = creatInfoWindowContent(g_markers[index])
+                                g_infoWindow.setContent(content);
+                            }
+                        }
+                        /*g_markers[index].f_curlongitude = soldier.f_curlongitude;
+                        g_markers[index].f_curlatitude = soldier.f_curlatitude;*/
+                    }
+                    g_markerClusterer.addMarkers(g_markers);               	//  添加新的标注，需要更新到点聚合功能
+                }
+            });
+
+            // 关联c++端选择士兵信号
+            g_obj.selectSoldierSignal.connect(function (text) {
+                if (!text.f_soldierid) return;
+                var zoom = text.zoomLevel;
+                var zoomChanged = false;
+                if (zoom < g_minLevel || zoom > g_maxLevel){
+                    zoom = g_map.getZoom();
+                }else if(zoom != g_map.getZoom) {
+                    zoomChanged = true;
+                }
+
+                for (var i = 0; i < g_markers.length; i++) {
+                    var marker = g_markers[i];
+                    if (marker.f_soldierid == text.f_soldierid) {
+                        updateIcon(marker);
+                        if(text.isJump){
+                            //  弄一个跳动的图标指示位置
+                            var light_marker = new BMap.Marker(marker.getPosition());
+                            var iconOpt = { anchor: new BMap.Size(24, 39), imageOffset: new BMap.Size(0, 0) }; // icon图标位置参数
+                            var icon = new BMap.Icon("./styles/images/selectsplash.png", g_iconSize, iconOpt);
+                            light_marker.setIcon(icon);
+                            light_marker.setZIndex(1);
+                            g_map.addOverlay(light_marker);
+                            light_marker.setAnimation(BMAP_ANIMATION_BOUNCE); //跳动的动画
+                            setTimeout(function () {
+                                g_map.removeOverlay(light_marker);
+                            }, 1500);
+                        }
+                        
+                        if(text.isCenter && zoomChanged){
+                            g_map.centerAndZoom(marker.getPosition(), zoom);
+                        }else if(text.isCenter){
+                            g_map.panTo(marker.getPosition());
+                        }else if(zoomChanged){
+                            g_map.centerAndZoom(marker.getPosition(),zoom);
+                        }
+//                        g_obj.recvSoldierIdSlot(marker.f_soldierid);       // 把士兵id发送给c++端
+                    }
+                }
+
+            });
+
+            // 关联c++端删除士兵位置信号
+            g_obj.deleteSoldiersSignal.connect(function (text) {
+                for (var i = 0; i < text.length; i++) {
+                    var t_id = text[i].f_soldierid;
+
+                    for (var j = g_markers.length - 1; j >= 0; j--) {
+                        var t_marker = g_markers[j];
+                        if (g_markers[j].f_soldierid == t_id) {
+                            g_markerClusterer.removeMarker(g_markers[j]);       // 删除了标注，更新到点聚合功能
+                            g_markers.splice(j, 1);
+                        }
+                    }
+                }
+            });
+            
+            // 关联c++端删除 所有 士兵位置信号
+            g_obj.deleteAllSoldiersSignal.connect(function () {
+                g_markerClusterer.clearMarkers();       // 删除了标注，更新到点聚合功能          
+                g_markers.splice(0, g_markers.length);                  // 清空数组
+            });
+
+            // 关联c++端 画折线信号
+            g_obj.showPathSignal.connect(function (text) {
+                if (!text.f_soldierid) return;
+                if (text.path.length <= 1) return;
+                var pts = [];
+                for (var i = 0; i < text.path.length; i++) {
+                    var p1 = new BMap.Point(text.path[i].f_curlongitude, text.path[i].f_curlatitude);
+                    pts.push(p1);
+                }
+                for (var i = g_pathes.length - 1; i >= 0; i--) {
+                    var polyline = g_pathes[i];
+                    if (polyline.f_soldierid == text.f_soldierid && polyline instanceof BMap.Marker) {
+                        g_map.removeOverlay(polyline);
+                        g_pathes.splice(i, 1);
+                    }
+                }
+                var color = text.color ? text.color : "#000000";
+                var poly = new BMap.Polyline(pts, { strokeColor: color, strokeWeight: 2, strokeOpacity: 0.8 });     // 折线对象，设置颜色，线的宽度，透明度
+                poly.f_soldierid = text.f_soldierid;
+                g_pathes.push(poly);
+                g_map.addOverlay(poly);
+                g_map.panTo(pts[pts.length - 1]);
+
+                //添加箭头矢量
+                var marker = new BMap.Marker(pts[pts.length - 1], { icon: new BMap.Symbol(BMap_Symbol_SHAPE_FORWARD_CLOSED_ARROW, {
+                    scale: 2,
+                    strokeWeight: 1,
+                    rotation: getAngel(pts[pts.length - 2], pts[pts.length - 1]), //顺时针旋转为正
+                    fillColor: color,
+                    fillOpacity: 1
+                })
+                })              // 创建标注
+                marker.f_soldierid = text.f_soldierid;
+                g_pathes.push(marker);
+                g_map.addOverlay(marker);
+
+            });
+
+            // 关联c++端 删除所有折线的信号....
+            g_obj.deleteAllPathSignal.connect(function () {
+                for (var i = 0; i < g_pathes.length; i++) {
+                    g_map.removeOverlay(g_pathes[i]);           //地图上删除所有折线
+                }
+                g_pathes.splice(0, g_pathes.length);            // 清空保存所有折线对象的数组
+            });
+
+            // 关联缩放至全部可见
+            g_obj.zoomToSeeAllSignal.connect(function () {
+                var length = g_markers.length;
+                if(length<=0)return;
+
+                var list = [];
+                for (var i=0;i<length;i++){
+                    //var p = new BMap.Point(g_markers[i].getPosition().lng,g_markers[i].getPosition().lat);
+                    var p = g_markers[i].getPosition();
+                    list.push(p);
+                }
+                var opt = g_map.getViewport(list,{
+                    enableAnimation:true,
+                    margins:[0,0,0,0],
+                });
+                g_map.centerAndZoom(opt.center,opt.zoom);
+            });
+
+            // 关联获取可见区域id 的信号
+            g_obj.getVisibleSignal.connect(function () {
+                getVisibleIds();
+            });
+
+            // 关联返回前一个位置的信号
+            g_obj.prePositionSignal.connect(function () {
+                if(g_centers.length < 2)return;
+                var position = g_centers[g_centers.length-2];
+                g_centers.pop();
+                g_map.centerAndZoom(position.point,position.zoom);
+
+            });
+
+            //
+            function getSelectedMarker(){
+                for (var i=0;i<g_markers.length;i++){
+                    if(g_markers[i].isSel == 1)return g_markers[i];
+                }
+            }
+
+            // 创建infowindow 要显示的内容
+            function creatInfoWindowContent(ptr) {
+                var pt = ptr.getPosition();
+                var content = "<div style=''><h4 style='margin:0; text-align:center;'>信息</h4>" +
+//                               "<div>id : " + ptr.f_soldierid + "</div>" +
+                               "<div>姓名: " + ptr.f_soldiername + "</div>" +
+                               "<div>type : " + ptr.f_soldiertype + "</div>" +
+//                               "<div>info : " + ptr.f_unitinfo + "</div>" +
+                               "<div>位置 ：" + pt.lng + "," + pt.lat + "</div>" +
+                               "</div>";
+                return content;
+            }
+
+            // 点击后更换图标的函数 ,ptr 为点击的marker对象
+            function updateIcon(ptr) {
+                for (var i=0;i<g_markers.length;i++){
+                    var marker = g_markers[i];
+                    if(marker.isSel == 1){
+                        marker.isSel = 0;
+                        marker.setIcon(new BMap.Icon(g_iconPath + marker.icon + g_type, g_iconSize, g_iconOpt));
+                    }
+                }
+                ptr.isSel = 1;
+                ptr.setIcon(new BMap.Icon(g_iconPath + ptr.icon + "_select" + g_type, g_iconSize, g_iconOpt));
+            }
+
+            // 获取两点之间的角度，正前方为0度，顺时针为正
+            function getAngel(p1, p2) {
+                var t_lng = p2.lng > p1.lng ? 1 : -1;
+                var t_lat = p2.lat > p1.lat ? 1 : -1
+                var dx = t_lng * g_map.getDistance(new BMap.Point(p2.lng, p2.lat), new BMap.Point(p1.lng, p2.lat));
+                var dy = t_lat * g_map.getDistance(new BMap.Point(p2.lng, p2.lat), new BMap.Point(p2.lng, p1.lat));
+                var angel = Math.atan2(dx, dy) * 180.0 / Math.PI;
+                return angel;
+            }
+
+            //获取关联获取可见区域id 的信号
+            var g_timer = null;
+            var g_lastTime = 0;
+            var g_lastIds = "";
+            function getVisibleIds(){
+                // 由于百度的 move 和 zoom 事件乱七八糟，一次缩放能出现几十个事件，所以不得已限制一下此函数的频率
+                var now_t = new Date().getTime();
+                if(!g_timer){
+                    g_lastTime = now_t;
+                    g_timer = setTimeout(getVisibleIds,500);
+                    return;
+                }else{
+                    window.clearTimeout(g_timer);
+                    g_timer = setTimeout(getVisibleIds,500);
+
+                    if(g_isZooming || g_isMoving){
+                        g_lastTime = now_t;
+                        return;
+                    }else {
+                        if(now_t - g_lastTime >= 500){
+                            window.clearTimeout(g_timer);
+                            rememberCenter();
+                            g_timer = null;
+                            g_lastTime = now_t;
+                        }else {
+                            return;
+                        }
+                    }
+                }
+
+                var length = g_markers.length;
+                var list  = [];                //存储符合条件的id
+                var bs = g_map.getBounds();   //获取可视区域
+                var pSouthWest = bs.getSouthWest(); //西南角经纬度
+                var pNorthEast = bs.getNorthEast(); //东北角经纬度
+
+                var margin =[25,0,20,0];   //上下左右的margin值
+                var x1 = (pNorthEast.lng - pSouthWest.lng)/g_map.getSize().width;
+                var x2 = (pNorthEast.lat - pSouthWest.lat)/g_map.getSize().height;
+                var top = -x2 * margin[0] + pNorthEast.lat;
+                var down = x2 * margin[1] + pSouthWest.lat;
+                var left = x1 * margin[2] + pSouthWest.lng;
+                var right = -x1 * margin[3]+ pNorthEast.lng;
+                for (var i=0;i<length;i++) {
+                    var pt = g_markers[i].getPosition();
+                    // 遍历士兵的marker数组，如果marker的经纬度在限定范围内，则把此士兵的id添加进数组
+                    if (pt.lng > left && pt.lng < right && pt.lat > down && pt.lat < top) {
+                        list.push(g_markers[i].f_soldierid);
+                    }
+                }
+                //比较跟上次的是否一样，不一样才发送
+                if(list.toString() != g_lastIds){
+                    g_lastIds = list.toString();
+                    var str = list.join(",");
+                    g_obj.recvVisibleIDSlot(str);
+
+                    var marker = getSelectedMarker();
+                    if(marker) g_obj.recvSoldierIdSlot(marker.f_soldierid);
+                }
+
+            }
+
+            function rememberCenter() {
+                var length = g_centers.length;
+                var point = g_map.getCenter();
+                var zoom = g_map.getZoom();
+                var position = new Object();
+                position.point = point;
+                position.zoom = zoom;
+
+                if(length > 1){
+                    var ppre = g_centers[length-1];
+                    if (ppre.point.lng == point.lng && ppre.point.lat == point.lat && ppre.zoom == zoom){
+                        return;
+                    }
+                }
+
+                if(g_centers.length >= 100){
+                    var num = g_centers.length-99;
+                    g_centers.splice(0,num);
+                }
+                g_centers.push(position);
+            }
+
+
+        });
+    }
+</script>
+</html>
