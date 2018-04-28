@@ -2,8 +2,11 @@
 #define PLAYER_H
 
 class QImage;
-class ReadThread;
+class Decoder;
 class QPushButton;
+class QLabel;
+class QWidget;
+class MySlider;
 
 #include <QWidget>
 
@@ -11,26 +14,42 @@ class Player : public QWidget
 {
     Q_OBJECT
 public:
-    explicit Player(QWidget *parent = nullptr);
-    Player(const QString path, QWidget *parent = nullptr);
+    explicit Player( QWidget *parent = nullptr);
     ~Player();
 
-    void setPath(const QString path);
-    void start();
+    void setUrl(const QString &url);
+    void setVolume(int volume);
+    void startPlay();
+    bool isPlaying();
+    void pause();
     void stop();
+    void seek(int pos);
 
 protected:
+    QWidget     *m_controller;
     QImage      m_image;
-    ReadThread  *m_readThread;
+    QLabel      *m_currentTime;
+    QLabel      *m_videoLength;
+    MySlider    *m_slider;
     QPushButton *m_startButton;
+    QPushButton *m_pauseButton;
     QPushButton *m_stopButton;
-    bool        m_playing;
 
-    void initParam();
+    Decoder     *m_decoder;
+
+    void createController();
+    int sceneHeight();
+    QSize sceneSize();
     void paintEvent(QPaintEvent *event);
     void closeEvent(QCloseEvent *event);
-public slots:
+
+    void setVideoLength(int length);
+    void setVideoCurrentTime(int length);
     void showFrame(QImage img);
+    void decoderEnd();
+
+public slots:
+
 };
 
 #endif // PLAYER_H
