@@ -1,0 +1,75 @@
+
+------界面测试工具 协议 2020-0410-2
+
+>>>按钮			对应下发请求
+
+>>>获取RTC		rtc-get
+  返回示例：“-----ok rtc_get. Sat Mar 28 02:30:33 2020  0.000000 seconds”
+  结果中时间加上8小时为当前时间。
+
+>>>更新RTC		rtc-update
+  返回示例：“-----ok rtc_set. Sat Mar 28 02:30:33 2020  0.000000 seconds”
+  结果中时间加上8小时为当前时间。
+
+>>>测tf			ttfcar
+  返回示例：“-----ok tf.“
+
+>>>测eeprom		tteeprom
+  返回示例：“-----ok eeprom. wr/cmp 37.”
+
+>>>多项测试		ttuv2x			//对开始2秒的结果可不作判断
+	返回项：2个温度，时间,4G，rj45，usb-com，can，rs485，gps, obd, rs232
+>>>多项测试		ttuv2x +ltev	//对开始2秒的结果可不作判断
+	返回项相对ttuv2x的多出：ltev_tx，ltev_rx
+>>>多项测试		ttuv2x all		//对开始2秒的结果可不作判断
+	返回项相对ttuv2x的多出：ltev_tx，ltev_rx，wifi
+	
+>>>恢复出厂		refactory force
+  返回示例：“
+-----ok clean
+        wifista set disable...
+-----ok wifi_sta disable
+        wifiap set enable...
+uap0      Link encap:Ethernet  HWaddr 74:EE:2A:78:69:D7  
+-----ok wifi_ap on
+        rtc set...
+-----ok rtc time set.
+
+the local rtc is:
+-----ok rtc_get Sat Mar 28 04:27:11 2020  0.000000 seconds
+	”
+  注：恢复出厂的最后项rtc_get的时间，建议与电脑的utc时间值比较（差个120s内判断为true），显示比较后的"true" or "false"。
+
+>>>led 常灭		ttled 0
+  返回示例："-----ok led. off"
+>>>led 常亮		ttled 1
+  返回示例："-----ok led. on"
+>>>led 闪烁		ttled 2
+  返回示例："-----ok led. flash"
+
+------界面工具找设备 2020-06-30 01
+
+界面工具向12303端口广播“OR-TEST”
+
+------ 2020-06-30
+"ttuv2x all"的上传示例
+“
+=================65631 41000 0517 13:59:02
+-----ok gps. 只读测试: 1. 025104.00,2807.57404,N,11252.81149,E,1,12,0.77,44.1,M,-12.8,M,,
+-----ok usb-com. 读写测试. 10. a, b, c
+-----ok otg. 读写测试. 10. a, b, c
+-----ok ltev_tx. 20
+        rec b:0,m:0,r:0,rsi:0,s:0. tm:1558072742.797
+-----err ltev_rx. dev arr: 0, bsm ct: 0
+-----ok can. 测试: 19. 3412 cdab 0 0
+-----err wifi. no ip
+-----ok secu. m2k, using: 6ms
+-----ok 4G. a time=74.481
+-----ok rs422. 读写测试. 5. rs422,a,b,c,d.opqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzab
+-----ok rj45. time=19.211
+-----ok rs232. 读写测试. 10. a, b, c
+-----ok obd. …………
+-----ok rs485. …………
+”
+
+

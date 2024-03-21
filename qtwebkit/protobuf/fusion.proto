@@ -1,0 +1,34 @@
+// A very simple protocol definition, consisting of only
+// one message.
+
+syntax = "proto2";
+
+package fusionPackage;
+
+message targetMessage {
+    required uint32 id = 1;
+    required uint64 lon = 2;//GPS_lon*1e7
+    required uint64 lat = 3;//GPS_lat*1e7
+    required int32 velocity = 4;//精确到厘米，Km*100/h
+    required int32 heading = 5;//度×100
+    required uint32 type = 6;//1：行人，2：车辆
+}
+
+message Timestamp {
+  // Represents seconds of UTC time since Unix epoch
+  // 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
+  // 9999-12-31T23:59:59Z inclusive.
+  required int64 seconds = 1;
+
+  // Non-negative fractions of a second at nanosecond resolution. Negative
+  // second values with fractions must still have non-negative nanos values
+  // that count forward in time. Must be from 0 to 999,999,999
+  // inclusive.
+  required int32 nanos = 2;
+}
+
+
+message fusionMsg {
+    required Timestamp timeStamp = 1;
+    repeated targetMessage msg = 2; 
+}

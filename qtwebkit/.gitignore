@@ -1,0 +1,14 @@
+
+
+*.pro.user
+build/*.cpp
+build/Makefile
+build/*.o
+build/mapTool
+build/html/map/*
+build_sender/
+!build/html/map/map_download.py
+
+
+
+

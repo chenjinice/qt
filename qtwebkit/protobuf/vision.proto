@@ -1,0 +1,312 @@
+/*
+	视觉与rsu通信协议 : V2019.08.17
+	修改log : 
+    	2019-08-17 : 修改特殊车辆 和 Detectobject，lane_type 改为 lane_info    
+		2019-08-08 : 动态配时场景，添加 time_begin 和 time_end
+*/
+
+syntax = "proto2";
+
+package vision;
+
+// 场景ID
+enum ID{
+	DEFAULT				= 0;  // 无用
+	PEDESTRIAN_D		= 1;  // 行人与动物闯入检测
+	ILLEGAL_V1			= 2;  // 违章车辆1(违停)
+    VISIBILITY			= 3;  // 白天能见度检测
+	AVAILABLE_AREA		= 4;  // 可行驶区域检测	
+    ABNORMAL_CAR		= 5;  // 异常车辆检测(静止)
+	ILLEGAL_V2			= 6;  // 违章车辆2(应急车道)
+	TRAFFIC_STATUS		= 7;  // 交通态势感知
+	BACKWARD_DRIVING	= 8;  // 逆向行驶告警
+	ROAD_DANGER			= 9;  // 道路危险状况提醒(抛洒物)
+	FIRE_SMOKE			= 10; // 隧道内火焰与烟雾预警
+	DETECTOBJECTS		= 11; // 检测目标数据
+	TRAFFIC_JAM			= 12; // 前方拥堵提醒
+	TRAFFIC_FLOW		= 13; // 动态配时场景
+	SPECIALCAR			= 14; // 特殊车辆
+    ACCIDENT			= 15; // 交通事故
+    ICEWARN				= 16; // 结冰
+	LANE_WARE			= 17; // 车道线磨损
+}
+
+// 视觉捕捉到的物体类型
+enum TYPE{
+	OTHERS		= 0;	// 其他
+	HUMAN		= 1;	// 人
+	VEHICLE		= 2;	// 车
+	MOTORCYCLE	= 3;	// 摩托车
+    ANIMAL		= 4;	// 动物
+}
+
+// 时间戳
+message data_time {
+	required uint64 sec  = 1;	// 秒
+	required uint32 usec = 2;	// 微秒
+}
+
+// 单个行人
+message Pedestrian {  
+	required int32 object_id = 1;			
+	required TYPE  object_type = 2;	
+	required int32 lng = 3;				// 经度
+	required int32 lat = 4; 			// 纬度
+	required int32 camera = 5;			// 哪个相机（1,2,3,4）
+	optional int32 if_at_lane = 6;		// 是否在车道
+	optional int32 lane_id = 7;			// 车道id
+	optional int32 heading = 8;    		// 摄像头参考航向*100
+	optional int32 approach_judge=9;	// 0标识行人在于摄像头参考航向一致的区域，1标识行人在于摄像头参考航向相反的区域，3标识两个方向都需要考虑（中间带）
+	optional int32 speed=10;			// 行人速度*100
+	optional int32 people_heading=11;	// 行人方向*100
+	optional int32 lane_type = 12;		// 1=主道，2=上匝道，3=下匝道
+} 
+
+// 单个障碍物
+message Obstacle {  
+	required int32 object_id = 1;			
+	required int32 lng = 2;			// 经度
+	required int32 lat = 3;			// 纬度
+	required int32 camera = 4;		// 哪个相机（1,2,3,4）
+	optional int32 if_at_lane = 5;	// 是否在车道
+	optional int32 lane_id = 6;		// 车道id
+	optional int32 heading = 7;    
+    optional int32 length = 8;		// 长
+	optional int32 width = 9;		// 宽
+	optional int32 height= 10;		// 高
+}
+
+enum ABNORMALTYPE {
+	DEFAULT_A			= 0;  // 无用
+	STOP_CAR1			= 1;  // 静止车辆（主道）
+	STOP_CAR2			= 2;  // 静止车辆（导流线区域）
+    CONTINUOUS_DIVERSION= 3;  // 连续变道（匝道出口区域）
+	LINE_PRESSING		= 4;  // 骑线行驶	
+}
+
+// 单个车辆(异常车辆)
+message AbnormalCar {
+    required int32 object_id = 1;
+    required int32 lng = 2;		// 经度
+    required int32 lat = 3;		// 纬度
+    optional int32 lane_id = 4;	// 车道id
+    optional int32 camera = 5;	// 哪个相机（1,2,3,4）
+	optional ABNORMALTYPE abnormal_type = 6;
+}
+
+// 单个特殊车辆
+message SpecialCar{  
+	enum SPECIALTYPE{
+		NORMAL		= 0;	// 普通
+		AMBULANCE	= 1;	// 救护车
+		DANGERCAR	= 2;	// 危险品车辆
+		FIREENGINE	= 3;	// 消防车
+		POLICECAR	= 4;	// 警车
+	}
+	required int32 object_id = 1;			
+    required SPECIALTYPE special_type = 2;	
+	required int32 lng = 3;			// 经度
+	required int32 lat = 4;			// 纬度
+	required int32 camera = 5;		// 哪个相机（1,2,3,4）
+	optional int32 lane_id = 6;		// 车道id
+	optional int32 heading = 7;    
+    // lane_info 0xabcd
+    // bit 0~4 d : 摄像头监控区域类型 1：汇入 2：汇出：3 常规路段
+    // bit 5~8 c : 车道总数
+    // bit 9~12 b : 车道序号：行车方向从左到右累加，从1开始计数。
+    // bit 13~31 a : 保留
+    optional int32 lane_info = 8;
+} 
+
+// 单个可行驶区域
+message AvailableArea {  
+	required int32 object_id = 1;			
+	required int32 lng1 = 2;		// 第一个点经度
+	required int32 lat1 = 3;		// 第一个点纬度
+	required int32 lng2 = 4;		// 第二个点经度
+	required int32 lat2 = 5;		// 第二个点纬度
+	required int32 lng3 = 6;		// 第三个点经度
+	required int32 lat3 = 7;		// 第三个点纬度
+	required int32 lng4 = 8;		// 第四个点经度
+	required int32 lat4 = 9;		// 第四个点纬度
+	required int32 camera = 10;		// 哪个相机（1,2,3,4）
+	optional int32 lane_id = 11;	// 车道id
+	optional int32 heading = 12;    
+} 
+
+// 单个相机拍摄到的拥堵情况
+message JamInfo {
+	required uint32 vehicle_num = 1;		// 车辆数
+	required double vehicle_avg_speed = 2;  // 车辆平均速度 km/h
+	required double road_yaw = 3;			// 道路航向角  (度)
+	repeated int32	vehicle_flow = 4;		// 每个车道车辆单位时间通过数
+	optional int32	lane_id = 5;			// 车道id
+}
+
+// 交叉路口单个相机拍到的流量情况
+message FlowInfo{
+	enum TrafficSig{
+		UNKNOWN = 0;
+		Y2G = 1;	// 黄灯切换到绿灯信号
+		OVER = 2;	// 消散时间结束信号
+	}
+	optional int32 camera = 1; 			// 哪个相机
+	repeated uint32 vehicle_num = 2;  	// 每个车道车辆数
+	repeated uint32 pass_num = 3;		// 每个车道消散时间内通过车辆数
+	optional TrafficSig signal = 4;     // 黄灯切换到绿灯信号
+}
+
+message Base {
+	required ID id = 1;
+} 
+
+
+
+
+//-------------------------------------发送给rsu的消息--------------------------------------------
+
+// 行人
+message Crowd {
+	required ID id = 1;
+	repeated Pedestrian pedestrian = 2;
+	optional data_time time = 3;
+} 
+
+// 障碍物
+message Obstacles {
+	required ID id = 1;
+    repeated Obstacle array = 2;
+	optional data_time time = 3;
+}
+
+// 可行驶区域
+message AvailableAreas { 
+	required ID id = 1;
+	repeated AvailableArea area = 2;
+	optional data_time time = 3;
+}
+
+// 违章车辆
+message IllegalCarWarn {
+	required ID id = 1;
+    repeated AbnormalCar array = 2;  // 车辆数组
+	optional data_time time = 3;
+}
+
+/* 能见度检测
+   能见度距离 能见度等级
+	  > 500       0(较好)
+     200~500      1(好)
+     100~200      2(一般)
+     50~100       3(差)
+     0-50         4(较差)	*/
+message Visibility{
+	required ID id = 1;
+	required double distance = 2;	// 能见度距离 m
+    required int32	level = 3;		// 能见度等级
+}
+
+// 火焰烟雾报警
+message SmokeWarn{
+	required ID id = 1;
+    required bool warn = 2;         // 是否有报警
+}
+
+// 前方拥堵提醒
+message TrafficJam {
+	required ID id = 1;
+	repeated JamInfo jam = 2;
+	optional data_time time = 3;
+}
+
+// 动态配时场景需要数据
+message TrafficFlow {
+	required ID id = 1;
+	repeated FlowInfo flow = 2;
+	optional data_time time_begin = 3;
+	optional data_time time_end = 4;
+}
+
+// 结冰报警
+message IceWarn{
+	required ID id = 1;
+    required bool warn = 2;  // 是否有报警
+}
+
+// 车道线磨损
+message LaneWare{	
+	enum WARETYPE{
+		DEFAULT			 = 0;	// 无用	
+		FULLLINE		 = 1;	// 实线（白）
+		DOTTEDLINE		 = 2;	// 虚线
+		DOUBLEYELLOWLINE = 3; 	// 双黄线
+	}
+	required ID id = 1;
+	required WARETYPE ware_type = 2;
+    required int32 lng1 = 3;	// 第一个点经度
+	required int32 lat1 = 4;	// 第一个点纬度
+	required int32 lng2 = 5;	// 第二个点经度
+	required int32 lat2 = 6;	// 第二个点纬度
+	optional int32 heading = 7;
+}
+
+// 特殊车辆
+message SpecialCarMsg{
+	required ID id = 1;
+	repeated SpecialCar array = 2; 
+	optional data_time time = 3;
+}
+
+
+
+
+// ----------------------------------发给融合程序的---------------------------------------------
+
+/*********** add for radar and vision fusion ***************
+  *date: 2019-05-06
+  *Author: she
+  *version: V1.1
+  *Description: add timestamp
+  *history：2019-06-17 add velocity
+  **************************************************************/
+message Timestamp {
+  // Represents seconds of UTC time since Unix epoch
+  // 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
+  // 9999-12-31T23:59:59Z inclusive.
+  required int64 seconds = 1;
+
+  // Non-negative fractions of a second at nanosecond resolution. Negative
+  // second values with fractions must still have non-negative nanos values
+  // that count forward in time. Must be from 0 to 999,999,999
+  // inclusive.
+  required int32 nanos = 2;
+}
+
+message Detectobject {  
+	required int32 object_id = 1;			
+	required TYPE  object_type = 2;	
+	required int32 longitudinalX = 3;	// 融合：纵向距离 普通：经度
+	required int32 lateralY = 4;		// 融合：横向距离 普通：纬度
+	required int32 velocity = 5;		// 融合：速度 km/h 小数点右移两位，0.01的精度 如：10.01km/h  传入1001	
+	required int32 camera = 6;			// 哪个相机（1,2,3,4）
+	optional int32 if_at_lane = 7;		// 是否在车道
+	optional int32 lane_id = 8;			// 车道id(从右至左1,2，…)
+	optional int32 heading = 9;    		
+    // lane_info 0xabcd
+    // bit 0~4 d : 摄像头监控区域类型 1：汇入 2：汇出：3 常规路段
+    // bit 5~8 c : 车道总数
+    // bit 9~12 b : 车道序号：行车方向从左到右累加，从1开始计数。
+    // bit 13~31 a : 保留
+    optional int32 lane_info = 10; 
+}   
+
+// 发给融合程序的检测目标
+message Detectobjects {
+	required ID id = 1;
+	repeated Detectobject object = 2;
+	optional Timestamp time = 3;
+} 
+
+
+
+
